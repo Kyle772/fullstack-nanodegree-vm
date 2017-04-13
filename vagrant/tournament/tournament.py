@@ -8,11 +8,14 @@ import psycopg2
 
 def connect():
     """Connect to the PostgreSQL database.  Returns a database connection."""
-    conn = psycopg2.connect("dbname=tournament")
-    cur = conn.cursor()
-    print("\nOpening new connection")
-    print("------------------------")
-    return cur, conn
+    try:
+        conn = psycopg2.connect("dbname=tournament")
+        cur = conn.cursor()
+        print("\nOpening new connection")
+        print("------------------------")
+        return cur, conn
+    except e:
+        print(e)
 
 def close(conn, close=False, commit=False):
     if commit:
@@ -27,7 +30,7 @@ def deleteMatches():
     """Remove all the match records from the database."""
     cur, conn = connect()
     print("Deleting matches")
-    cur.execute("""DELETE FROM MATCHES;""")
+    cur.execute("""TRUNCATE MATCHES;""")
     close(conn, commit=True, close=False)
     cur.execute("""SELECT * FROM MATCHES""")
     rows = cur.fetchall()
@@ -39,16 +42,7 @@ def deletePlayers():
     """Remove all the player records from the database."""
     cur, conn = connect()
     print("Deleting players")
-    cur.execute("""SELECT ID FROM PLAYERS;""")
-    rows = cur.fetchall()
-    for row in rows:
-        print("Deleting id {} from Matches due to dependency".format(row[0]))
-        cur.execute("""DELETE FROM MATCHES WHERE ID='{}'""".format(row[0]))
-        close(conn, commit=True, close=False)
-        cur.execute("""SELECT * FROM MATCHES""")
-        rows = cur.fetchall()
-        print("Current Matches data:\n {}".format(rows))
-    cur.execute("""DELETE FROM PLAYERS;""")
+    cur.execute("""TRUNCATE PLAYERS CASCADE;""")
     close(conn, commit=True, close=False)
     cur.execute("""SELECT * FROM PLAYERS""")
     rows = cur.fetchall()
@@ -89,12 +83,7 @@ def registerPlayer(name):
     print("Registering Players with data({})".format(name))
     print("Adding player name to t:players")
     cur.execute("""INSERT INTO PLAYERS(NAME) VALUES(%s);""", (name,))
-    print("Getting id for Matches")
-    cur.execute("""SELECT ID from PLAYERS WHERE NAME=%s""", (name,))
-    currentID = cur.fetchone()
-    print("Adding ID {} to t:matches".format(currentID[0]))
-    cur.execute("""INSERT INTO MATCHES(ID) VALUES(%s)""", (currentID[0],))
-    print("Added player {} to both tables".format(name))
+    print("Added player {} to t:players".format(name))
     cur.execute("""SELECT NAME from PLAYERS;""")
     name = cur.fetchall()
     print("Current table data:\n {}".format(name))
@@ -126,14 +115,25 @@ def playerStandings():
     rows = cur.fetchall()
     print("Current Players data:\n {}\n".format(rows))
     
-    cur.execute("""SELECT PLAYERS.ID,
-                          PLAYERS.NAME,
-                          coalesce(sum(MATCHES.WINS), 0) as wins,
-                          coalesce(sum(MATCHES.PLAYED), 0) as played
-                   from PLAYERS
-                   left join MATCHES on PLAYERS.ID = MATCHES.ID
-                   group by PLAYERS.ID
-                   order by wins desc;""")
+    cur.execute("""
+    SELECT p.ID, p.Name, coalesce(count(w.Winner), 0) as Wins, coalesce(count(w.Winner) + count(l.Loser), 0) AS TotalMatches
+    FROM Players p
+
+    LEFT OUTER JOIN 
+        (SELECT Winner, COUNT(*) AS Winners
+        FROM Matches
+        GROUP BY Winner) w
+    ON p.ID = w.Winner
+
+    LEFT OUTER JOIN 
+        (SELECT Loser, COUNT(*) AS Losers
+        FROM Matches
+        GROUP BY Loser) l
+    ON p.ID = l.Loser
+
+    GROUP BY p.ID
+    ORDER BY wins desc;
+    """)
     rows = cur.fetchall()
     print("ID, Name, Sum Wins, Sum played: \n {}\n".format(rows))
     close(conn, close=True, commit=False)
@@ -150,13 +150,7 @@ def reportMatch(winner, loser):
     """
     cur, conn = connect()
     print("Adding results of game data(Winner: {}, Loser:{})".format(winner, loser))
-    cur.execute("""INSERT INTO MATCHES(ID, PLAYED, WINS) VALUES(%s, 1, 1);""", (winner,))
-    close(conn, commit=True, close=False)
-    cur.execute("""INSERT INTO MATCHES(ID, PLAYED, LOSSES) VALUES(%s, 1, 1);""", (loser,))
-    close(conn, commit=True, close=False)
-    cur.execute("""SELECT * FROM MATCHES WHERE ID=%s and ID=%s;""", (winner, loser))
-    rows = cur.fetchall()
-    print("Changed entries:\n %s", (rows))
+    cur.execute("""INSERT INTO MATCHES(WINNER, LOSER) VALUES(%s, %s);""", (winner, loser))
     close(conn, commit=True, close=True)
  
  
