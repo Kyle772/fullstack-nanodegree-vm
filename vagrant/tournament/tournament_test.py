@@ -95,7 +95,7 @@ def testReportMatches():
     deleteMatches()
     standings = playerStandings()
     if len(standings) != 4:
-        raise ValueError("Match deletion should not change number of players in standings. Standing length is {}".format(len(standings)))
+        raise ValueError("Match deletion should not change number of players in standings.")
     for (i, n, w, m) in standings:
         if m != 0:
             raise ValueError("After deleting matches, players should have zero matches recorded.")
